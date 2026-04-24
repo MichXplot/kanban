@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Kanban Board with LocalStorage</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; padding: 20px; color: #333; }
+        h2 { text-align: center; color: #2c3e50; }
+        .board { display: flex; gap: 20px; justify-content: center; align-items: flex-start; margin-bottom: 40px; }
+        .column { background: #ebecf0; border-radius: 8px; width: 280px; min-height: 400px; padding: 15px; display: flex; flex-direction: column; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .column h3 { margin: 0 0 15px 0; font-size: 14px; text-transform: uppercase; color: #5e6c84; border-bottom: 2px solid #dfe1e6; padding-bottom: 5px; }
+        .task-list { flex-grow: 1; min-height: 100px; }
+        .task { 
+            background: white; border-radius: 5px; padding: 12px; margin-bottom: 10px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12); cursor: grab; position: relative;
+        }
+        .task .archive-btn { position: absolute; right: 8px; top: 8px; cursor: pointer; color: #ccc; border: none; background: none; }
+        .task .archive-btn:hover { color: #e74c3c; }
+        .archive-section { max-width: 900px; margin: 0 auto; border-top: 2px dashed #bdc3c7; padding-top: 20px; }
+        .archive-list { display: flex; flex-wrap: wrap; gap: 10px; }
+        .archived-task { background: #dcdde1; padding: 8px 12px; border-radius: 20px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+        .restore-btn { cursor: pointer; color: #2980b9; font-weight: bold; }
+        .add-btn { margin-top: 10px; padding: 8px; cursor: pointer; border: 2px dashed #cbd2d9; background: transparent; width: 100%; border-radius: 5px; }
+        .dragging { opacity: 0.4; }
+    </style>
+</head>
+<body>
+
+    <h2>Канбан с сохранением данных</h2>
+
+    <div class="board" id="board"></div>
+
+    <div class="archive-section">
+        <h3>📦 Архив</h3>
+        <div id="archive" class="archive-list"></div>
+    </div>
+
+<script>
+    // 1. Исходные данные (дефолтные)
+    const defaultData = {
+        columns: [
+            { id: "todo", title: "К выполнению", tasks: ["Первая задача"] },
+            { id: "in-progress", title: "В работе", tasks: [] },
+            { id: "done", title: "Готово", tasks: [] }
+        ],
+        archive: []
+    };
+
+    // Глобальная переменная данных
+    let kanbanData;
+
+    // 2. Функция СОХРАНЕНИЯ в localStorage
+    function save() {
+        localStorage.setItem('myKanbanData', JSON.stringify(kanbanData));
+    }
+
+    // 3. Функция ЗАГРУЗКИ из localStorage
+    function load() {
+        const saved = localStorage.getItem('myKanbanData');
+        if (saved) {
+            kanbanData = JSON.parse(saved);
+        } else {
+            kanbanData = defaultData;
+        }
+    }
+
+    function render() {
+        const board = document.getElementById('board');
+        const archive = document.getElementById('archive');
+        board.innerHTML = '';
+        archive.innerHTML = '';
+
+        kanbanData.columns.forEach((col, colIdx) => {
+            const colDiv = document.createElement('div');
+            colDiv.className = 'column';
+            colDiv.innerHTML = `<h3>${col.title}</h3>`;
+
+            const listDiv = document.createElement('div');
+            listDiv.className = 'task-list';
+            listDiv.ondragover = e => e.preventDefault();
+            listDiv.ondrop = e => handleDrop(e, colIdx);
+
+            col.tasks.forEach((task, taskIdx) => {
+                const taskDiv = document.createElement('div');
+                taskDiv.className = 'task';
+                taskDiv.draggable = true;
+                taskDiv.innerHTML = `${task} <button class="archive-btn" onclick="moveToArchive(${colIdx}, ${taskIdx})">✕</button>`;
+                
+                taskDiv.ondragstart = e => {
+                    e.dataTransfer.setData('taskIdx', taskIdx);
+                    e.dataTransfer.setData('fromColIdx', colIdx);
+                };
+                
+                listDiv.appendChild(taskDiv);
+            });
+
+            const addBtn = document.createElement('button');
+            addBtn.className = 'add-btn';
+            addBtn.textContent = '+ Добавить';
+            addBtn.onclick = () => {
+                const text = prompt('Название задачи:');
+                if(text) { 
+                    kanbanData.columns[colIdx].tasks.push(text); 
+                    save(); // Сохраняем после изменения
+                    render(); 
+                }
+            };
+
+            colDiv.appendChild(listDiv);
+            colDiv.appendChild(addBtn);
+            board.appendChild(colDiv);
+        });
+
+        kanbanData.archive.forEach((item, archIdx) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'archived-task';
+            itemDiv.innerHTML = `<span>${item}</span><span class="restore-btn" onclick="restoreFromArchive(${archIdx})">↩</span>`;
+            archive.appendChild(itemDiv);
+        });
+    }
+
+    function handleDrop(e, toColIdx) {
+        const taskIdx = e.dataTransfer.getData('taskIdx');
+        const fromColIdx = e.dataTransfer.getData('fromColIdx');
+        if (fromColIdx !== "") {
+            const task = kanbanData.columns[fromColIdx].tasks.splice(taskIdx, 1)[0];
+            kanbanData.columns[toColIdx].tasks.push(task);
+            save(); // Сохраняем после перемещения
+            render();
+        }
+    }
+
+    function moveToArchive(colIdx, taskIdx) {
+        const task = kanbanData.columns[colIdx].tasks.splice(taskIdx, 1)[0];
+        kanbanData.archive.push(task);
+        save(); // Сохраняем после архивации
+        render();
+    }
+
+    function restoreFromArchive(archIdx) {
+        const task = kanbanData.archive.splice(archIdx, 1)[0];
+        kanbanData.columns[0].tasks.push(task);
+        save(); // Сохраняем после восстановления
+        render();
+    }
+
+    // Запуск: сначала загружаем, потом рисуем
+    load();
+    render();
+</script>
+</body>
+</html>
